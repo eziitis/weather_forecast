@@ -1,23 +1,31 @@
 <?php
 namespace App\Service;
 
+use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Flex\Response;
+
 class GetUserCurrentWeatherForecast
 {
-    public function getUserIPAddress(): string
+    private $lat;
+    private $lon;
+    public function __construct($latitude, $longitude)
     {
-        //whether ip is from the share internet
-        if(!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            $ip_address = $_SERVER['HTTP_CLIENT_IP'];
-        }
-        //whether ip is from the proxy
-        elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $ip_address = $_SERVER['HTTP_X_FORWARDED_FOR'];
-        }
-        //whether ip is from the remote address
-        else{
-            $ip_address = $_SERVER['REMOTE_ADDR'];
+        $this->lat = $latitude;
+        $this->lon = $longitude;
+    }
+    public function getCurrentWeatherForecast(): string
+    {
+        $client = HttpClient::create();
+        try {
+            $url = 'https://api.openweathermap.org/data/2.5/weather?lat=' . $this->lat . '&lon=' . $this->lon . '&appid=' . $_ENV['OPENWEATHERMAP_API_ACCESS_KEY'];
+            $response = $client->request(
+                'GET',
+                $url
+            );
+        } catch (\Exception $e) {
+            return 'error: failed to make openweathermap API call';
         }
 
-        return is_string($ip_address) ? $ip_address : 'error: IP address not found';
+        return $response->getContent();
     }
 }
