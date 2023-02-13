@@ -25,13 +25,7 @@ class HomeController extends AbstractController
     #[Route('/', name: 'app_home')]
     public function index(): Response
     {
-        $cache = new FilesystemAdapter();
-        $json_data = $cache->get('weather_forecast_data', function (ItemInterface $item) {
-            $item->expiresAfter(3600);
-
-            return $this->getCurrentWeatherJsonDataString();
-        });
-
+        $json_data = $this->getCurrentWeatherJsonDataString();
         if (!str_contains($json_data, 'error')) {
             $decoded = json_decode($json_data);
             $error = '';
@@ -85,32 +79,32 @@ class HomeController extends AbstractController
         $weather_forecast = $this->doctrine->getRepository(WeatherForecast::class)->findBy(['ip_address' => $user_ip_address]);
         $entityManager = $this->doctrine->getManager();
 
-        if (count($weather_forecast) > 0) {
-            $forecast_data = $this->getWeatherData($user_ip_address);
+        $forecast_data = $this->getWeatherData($user_ip_address);
 
-            if (!str_contains($forecast_data, 'error')) {
-                $decoded = json_decode($forecast_data);
-                $error = '';
+        if (!str_contains($forecast_data, 'error')) {
+            $decoded = json_decode($forecast_data);
+            $error = '';
 
+            if (count($weather_forecast) > 0) {
                 $item = $weather_forecast[0];
                 $item->setWeatherForecast($forecast_data);
                 $entityManager->flush();
             } else {
-                $error = $forecast_data;
+                $weather_forecast = new WeatherForecast();
+                $weather_forecast->setIpAddress($user_ip_address);
+                $weather_forecast->setWeatherForecast($forecast_data);
+                $entityManager->persist($weather_forecast);
+                $entityManager->flush();
             }
-
-            return $this->render('index.html.twig', [
-                'controller_name' => 'HomeController',
-                'json_data' => $error === '' ? json_encode($decoded, constant('JSON_PRETTY_PRINT')) : '',
-                'error' => $error
-            ]);
         } else {
-            return $this->render('index.html.twig', [
-                'controller_name' => 'HomeController',
-                'json_data' => '',
-                'error' => 'Error: did\'n find DB record'
-            ]);
+            $error = $forecast_data;
         }
+
+        return $this->render('index.html.twig', [
+            'controller_name' => 'HomeController',
+            'json_data' => $error === '' ? json_encode($decoded, constant('JSON_PRETTY_PRINT')) : '',
+            'error' => $error
+        ]);
     }
 
     public function getWeatherData(string $user_ip_address): string
@@ -118,22 +112,24 @@ class HomeController extends AbstractController
         $get_user_location_service = new GetUserLocationService($user_ip_address);
         $user_location_data = $get_user_location_service->getUserLocation();
         $cache = new FilesystemAdapter();
-        $weather_data = $cache->get('weather_data', function (ItemInterface $item) use ($user_location_data) {
+        return $cache->get('weather_data', function (ItemInterface $item) use ($user_location_data) {
             $item->expiresAfter(3600);
 
             if (array_key_exists('ip', $user_location_data) && !str_contains($user_location_data['ip'], 'error')) {
                 $get_user_weather_forecast_service = new GetUserCurrentWeatherForecast($user_location_data['latitude'], $user_location_data['longitude']);
 
-                return $get_user_weather_forecast_service->getCurrentWeatherForecast();
+                try {
+                    return $get_user_weather_forecast_service->getCurrentWeatherForecast();
+                } catch (\Exception $e) {
+                    return 'error: unknown_1';
+                }
             } else {
                 if (array_key_exists('ip', $user_location_data)) {
                     return $user_location_data['ip'];
                 } else {
-                    return 'error: unknown';
+                    return 'error: unknown_2';
                 }
             }
         });
-
-        return $weather_data;
     }
 }
